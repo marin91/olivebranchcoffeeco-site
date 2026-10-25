@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-cream-50 text-ink font-sans antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-serif text-olive-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-olive-700 px-6 py-3 text-sm font-medium tracking-wide text-cream-50 transition-colors hover:bg-olive-800;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-olive-300 px-6 py-3 text-sm font-medium tracking-wide text-olive-800 transition-colors hover:bg-olive-100;
+  }
+
+  .section {
+    @apply mx-auto max-w-6xl px-6 py-16 sm:py-24;
+  }
+
+  .eyebrow {
+    @apply text-sm font-semibold uppercase tracking-[0.2em] text-clay-500;
+  }
+}
