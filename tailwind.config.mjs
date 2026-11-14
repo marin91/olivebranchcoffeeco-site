@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./src/**/*.{astro,html,js,jsx,ts,tsx,md,mdx}'],
+  safelist: ['bg-moss-800', 'hover:bg-moss-800'],
   theme: {
     extend: {
       colors: {
@@ -25,6 +26,12 @@ export default {
           400: '#c97b56',
           500: '#b5583a',
           600: '#95452c',
+        },
+        moss: {
+          DEFAULT: '#3A4726',
+          600: '#4a5a31',
+          700: '#3A4726',
+          800: '#2c3620',
         },
         ink: '#2b2a22',
       },

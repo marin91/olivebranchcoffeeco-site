@@ -18,11 +18,11 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-full bg-olive-700 px-6 py-3 text-sm font-medium tracking-wide text-cream-50 transition-colors hover:bg-olive-800;
+    @apply inline-flex items-center justify-center rounded-full bg-moss px-6 py-3 text-sm font-medium tracking-wide text-cream-50 transition-colors hover:bg-moss-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss focus-visible:ring-offset-2 focus-visible:ring-offset-cream-50;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-full border border-olive-300 px-6 py-3 text-sm font-medium tracking-wide text-olive-800 transition-colors hover:bg-olive-100;
+    @apply inline-flex items-center justify-center rounded-full border border-olive-300 px-6 py-3 text-sm font-medium tracking-wide text-olive-800 transition-colors hover:bg-olive-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss focus-visible:ring-offset-2 focus-visible:ring-offset-cream-50;
   }
 
   .section {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 type NavItem = { label: string; href: string };
 
-export default function MobileNav({ items }: { items: NavItem[] }) {
+export default function MobileNav({ items, currentPath }: { items: NavItem[]; currentPath: string }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,7 +33,11 @@ export default function MobileNav({ items }: { items: NavItem[] }) {
               <li key={item.href}>
                 <a
                   href={item.href}
-                  className="block py-1 text-base font-medium text-olive-800"
+                  className={
+                    item.href === currentPath
+                      ? 'block py-1 text-base font-semibold text-moss'
+                      : 'block py-1 text-base font-medium text-olive-800'
+                  }
                   onClick={() => setOpen(false)}
                 >
                   {item.label}
