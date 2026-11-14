@@ -8,7 +8,7 @@ export const site = {
     { days: 'Sat – Sun', time: '8:00am – 3:00pm' },
   ],
   social: {
-    instagram: 'https://instagram.com/olivebranchcoffeeco',
+    instagram: 'https://instagram.com/olive_branchcoffeeco',
     facebook: 'https://facebook.com/olivebranchcoffeeco',
   },
 };
