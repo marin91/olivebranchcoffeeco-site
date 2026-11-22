@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import WhoAndWhen, { type WhoAndWhenValue } from './WhoAndWhen';
-import type { AvailabilityDto } from '../../lib/ordering/types';
-import { OPEN_AVAILABILITY } from '../../test/fixtures/availability';
+import WhoAndWhen, { type WhoAndWhenValue } from '../../../components/order/WhoAndWhen';
+import type { AvailabilityDto } from '../../../lib/ordering/types';
+import { OPEN_AVAILABILITY } from '../../fixtures/availability';
 
 const EMPTY_VALUE: WhoAndWhenValue = {
   name: '',
