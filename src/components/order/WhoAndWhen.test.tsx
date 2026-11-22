@@ -4,18 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WhoAndWhen, { type WhoAndWhenValue } from './WhoAndWhen';
 import type { AvailabilityDto } from '../../lib/ordering/types';
-
-const OPEN_AVAILABILITY: AvailabilityDto = {
-  isShopOpen: true,
-  isAcceptingOrders: true,
-  isOrderingPaused: false,
-  earliestAsapIso: '2026-11-22T20:00:00.000Z',
-  slotsToday: [
-    { startIso: '2026-11-22T20:00:00.000Z', label: '12:00 PM', isFull: false },
-    { startIso: '2026-11-22T20:15:00.000Z', label: '12:15 PM', isFull: false },
-  ],
-  slotsTomorrow: [],
-};
+import { OPEN_AVAILABILITY } from '../../test/fixtures/availability';
 
 const EMPTY_VALUE: WhoAndWhenValue = {
   name: '',
