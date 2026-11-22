@@ -71,7 +71,7 @@ export default function OrderApp() {
         pickupMode: who.pickupMode,
         pickupSlotIso: who.pickupMode === 'scheduled' ? who.pickupSlotIso ?? undefined : undefined,
       });
-      window.location.href = `/order/status?ref=${order.reference}`;
+      window.location.href = `/order/status?token=${order.token}`;
     } catch (err) {
       if (err instanceof OrderingError) {
         setErrorCode(err.code);

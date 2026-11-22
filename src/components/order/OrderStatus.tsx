@@ -22,28 +22,28 @@ function pickupLabel(iso: string) {
 }
 
 export default function OrderStatus() {
-  const [reference, setReference] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderDto | null | 'loading' | 'not-found'>('loading');
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
-    const ref = new URLSearchParams(window.location.search).get('ref');
-    setReference(ref);
-    if (!ref) {
+    const tokenParam = new URLSearchParams(window.location.search).get('token');
+    setToken(tokenParam);
+    if (!tokenParam) {
       setOrder('not-found');
       return;
     }
     getOrderingClient()
-      .getOrder(ref)
+      .getOrder(tokenParam)
       .then((result) => setOrder(result ?? 'not-found'))
       .catch(() => setOrder('not-found'));
   }, []);
 
   async function handleCancel() {
-    if (!reference) return;
+    if (!token) return;
     try {
-      const updated = await getOrderingClient().cancelOrder(reference);
+      const updated = await getOrderingClient().cancelOrder(token);
       setOrder(updated);
       setConfirmingCancel(false);
     } catch (err) {

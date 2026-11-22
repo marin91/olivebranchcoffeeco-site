@@ -128,8 +128,11 @@ function makeToken(): string {
 export interface OrderingClient {
   getAvailability(): Promise<AvailabilityDto>;
   createOrder(request: CreateOrderRequest): Promise<OrderDto>;
-  getOrder(reference: string): Promise<OrderDto | null>;
-  cancelOrder(reference: string): Promise<OrderDto>;
+  // Keyed by the opaque token, never the human-readable reference — the
+  // reference is short and guessable, and is for the customer to read back
+  // to staff, not for authenticating a status/cancel lookup.
+  getOrder(token: string): Promise<OrderDto | null>;
+  cancelOrder(token: string): Promise<OrderDto>;
 }
 
 export function createMockOrderingClient(): OrderingClient {
@@ -174,6 +177,19 @@ export function createMockOrderingClient(): OrderingClient {
       if (forced === 'Network') throw new OrderingError('Network', 'Could not reach the shop. Check your connection and try again.');
       if (forced === 'TooManyOpenOrders') {
         throw new OrderingError('TooManyOpenOrders', "You've got an order already in progress. Pick that one up before ordering again.");
+      }
+      if (forced === 'ItemUnavailable') {
+        throw new OrderingError('ItemUnavailable', 'One of your items just sold out.');
+      }
+
+      // Re-check orderability at submit time, not just at add-to-cart time — an
+      // item can go sold out while the customer is still filling out the form.
+      const unavailableLine = request.lines.find((line) => {
+        const catalogItem = catalogItems.find((c) => c.slug === line.itemSlug);
+        return !catalogItem || !catalogItem.isActive || !catalogItem.isOrderable;
+      });
+      if (unavailableLine) {
+        throw new OrderingError('ItemUnavailable', `${unavailableLine.name} just sold out — go back and swap it out.`);
       }
 
       const byIdempotency = getOrders().find(
@@ -248,16 +264,16 @@ export function createMockOrderingClient(): OrderingClient {
       return order;
     },
 
-    async getOrder(reference: string): Promise<OrderDto | null> {
+    async getOrder(token: string): Promise<OrderDto | null> {
       await wait(SIMULATED_LATENCY_MS);
-      const match = getOrders().find((o) => o.reference.toLowerCase() === reference.toLowerCase());
+      const match = getOrders().find((o) => o.token === token);
       return match ?? null;
     },
 
-    async cancelOrder(reference: string): Promise<OrderDto> {
+    async cancelOrder(token: string): Promise<OrderDto> {
       await wait(SIMULATED_LATENCY_MS);
       const orders = getOrders();
-      const index = orders.findIndex((o) => o.reference.toLowerCase() === reference.toLowerCase());
+      const index = orders.findIndex((o) => o.token === token);
       if (index === -1) throw new OrderingError('NotFound', 'Order not found.');
 
       const order = orders[index];
