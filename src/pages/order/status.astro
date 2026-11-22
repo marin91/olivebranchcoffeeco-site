@@ -1,0 +1,10 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import OrderStatus from '../../components/order/OrderStatus.tsx';
+---
+
+<BaseLayout title="Order Status" description="Check the status of your Olive Branch Coffee Co. pickup order.">
+  <section class="section max-w-2xl">
+    <OrderStatus client:load />
+  </section>
+</BaseLayout>

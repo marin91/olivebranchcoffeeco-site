@@ -1,0 +1,19 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import OrderApp from '../components/order/OrderApp.tsx';
+---
+
+<BaseLayout title="Order Ahead" description="Order coffee ahead and pick it up at Olive Branch Coffee Co. Pay when you arrive.">
+  <section class="section">
+    <p class="eyebrow">Order ahead</p>
+    <h1 class="mt-3 text-4xl font-semibold">Order ahead, pay at pickup</h1>
+    <p class="mt-4 max-w-xl text-olive-700">
+      Build your order, tell us when you're coming by, and we'll text you a confirmation. No card needed — just
+      pay when you pick it up.
+    </p>
+
+    <div class="mt-12">
+      <OrderApp client:load />
+    </div>
+  </section>
+</BaseLayout>

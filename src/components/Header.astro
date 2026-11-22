@@ -30,9 +30,10 @@ const currentPath = Astro.url.pathname;
       </ul>
     </nav>
 
-    <a href="/events" class="hidden sm:inline-flex btn-primary">
-      Book an Event
-    </a>
+    <div class="hidden items-center gap-3 sm:flex">
+      <a href="/events" class="btn-secondary">Book an Event</a>
+      <a href="/order" class="btn-primary">Order Ahead</a>
+    </div>
 
     <MobileNav items={nav} currentPath={currentPath} client:load />
   </div>
