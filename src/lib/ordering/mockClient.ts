@@ -20,6 +20,16 @@ const SLOTS_KEY = 'ob-slot-reservations-v1';
 const SIMULATED_LATENCY_MS = 350;
 
 type SlotReservation = { reservedOrders: number; reservedPrepUnits: number };
+// The stored record carries the idempotency key for createOrder's own replay
+// lookup; it's never part of the public OrderDto contract, so every external
+// return point (getOrder, cancelOrder, the idempotent-replay branch) must
+// strip it via toPublicOrder before handing the order back to a caller.
+type StoredOrder = OrderDto & { idempotencyKey: string };
+
+function toPublicOrder(stored: StoredOrder): OrderDto {
+  const { idempotencyKey: _idempotencyKey, ...order } = stored;
+  return order;
+}
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,11 +55,11 @@ function writeJson(key: string, value: unknown) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-function getOrders(): OrderDto[] {
-  return readJson<OrderDto[]>(ORDERS_KEY, []);
+function getOrders(): StoredOrder[] {
+  return readJson<StoredOrder[]>(ORDERS_KEY, []);
 }
 
-function saveOrders(orders: OrderDto[]) {
+function saveOrders(orders: StoredOrder[]) {
   writeJson(ORDERS_KEY, orders);
 }
 
@@ -192,10 +202,8 @@ export function createMockOrderingClient(): OrderingClient {
         throw new OrderingError('ItemUnavailable', `${unavailableLine.name} just sold out — go back and swap it out.`);
       }
 
-      const byIdempotency = getOrders().find(
-        (o) => (o as unknown as { idempotencyKey?: string }).idempotencyKey === request.idempotencyKey,
-      );
-      if (byIdempotency) return byIdempotency;
+      const byIdempotency = getOrders().find((o) => o.idempotencyKey === request.idempotencyKey);
+      if (byIdempotency) return toPublicOrder(byIdempotency);
 
       const now = new Date();
       // "Closed right now" only blocks ASAP orders — a scheduled order for a future
@@ -258,7 +266,7 @@ export function createMockOrderingClient(): OrderingClient {
       };
 
       const orders = getOrders();
-      orders.push({ ...order, idempotencyKey: request.idempotencyKey } as OrderDto & { idempotencyKey: string });
+      orders.push({ ...order, idempotencyKey: request.idempotencyKey });
       saveOrders(orders);
 
       return order;
@@ -267,7 +275,7 @@ export function createMockOrderingClient(): OrderingClient {
     async getOrder(token: string): Promise<OrderDto | null> {
       await wait(SIMULATED_LATENCY_MS);
       const match = getOrders().find((o) => o.token === token);
-      return match ?? null;
+      return match ? toPublicOrder(match) : null;
     },
 
     async cancelOrder(token: string): Promise<OrderDto> {
@@ -287,10 +295,10 @@ export function createMockOrderingClient(): OrderingClient {
       );
       releaseSlot(new Date(order.pickupAtIso), prepUnits);
 
-      const updated: OrderDto = { ...order, status: 'Canceled' as OrderStatus, cancelReason: 'Customer' };
+      const updated: StoredOrder = { ...order, status: 'Canceled' as OrderStatus, cancelReason: 'Customer' };
       orders[index] = updated;
       saveOrders(orders);
-      return updated;
+      return toPublicOrder(updated);
     },
   };
 }
