@@ -13,10 +13,20 @@ import {
   slotKey,
 } from './slots';
 import { cartPrepUnits, cartSubtotalCents, lineTotalCents } from './pricing';
-import { OrderingError, type AvailabilityDto, type CreateOrderRequest, type OrderDto, type OrderStatus } from './types';
+import {
+  OrderingError,
+  type AdminSettingsDto,
+  type AvailabilityDto,
+  type CancelReason,
+  type CreateOrderRequest,
+  type MenuItemAvailabilityDto,
+  type OrderDto,
+  type OrderStatus,
+} from './types';
 
 const ORDERS_KEY = 'ob-orders-v1';
 const SLOTS_KEY = 'ob-slot-reservations-v1';
+const ADMIN_SETTINGS_KEY = 'ob-admin-settings-v1';
 const SIMULATED_LATENCY_MS = 350;
 
 type SlotReservation = { reservedOrders: number; reservedPrepUnits: number };
@@ -61,6 +71,18 @@ function getOrders(): StoredOrder[] {
 
 function saveOrders(orders: StoredOrder[]) {
   writeJson(ORDERS_KEY, orders);
+}
+
+type StoredAdminSettings = { onlineOrderingEnabled: boolean; soldOutSlugs: string[] };
+
+const DEFAULT_ADMIN_SETTINGS: StoredAdminSettings = { onlineOrderingEnabled: true, soldOutSlugs: [] };
+
+function getAdminSettingsStored(): StoredAdminSettings {
+  return readJson<StoredAdminSettings>(ADMIN_SETTINGS_KEY, DEFAULT_ADMIN_SETTINGS);
+}
+
+function saveAdminSettingsStored(settings: StoredAdminSettings) {
+  writeJson(ADMIN_SETTINGS_KEY, settings);
 }
 
 function getReservations(): Record<string, SlotReservation> {
@@ -135,6 +157,35 @@ function makeToken(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function releaseOrderSlot(order: StoredOrder) {
+  const prepUnits = order.items.reduce(
+    (sum, item) => sum + item.quantity * (catalogItems.find((c) => c.slug === item.itemSlug)?.prepUnits ?? 1),
+    0,
+  );
+  releaseSlot(new Date(order.pickupAtIso), prepUnits);
+}
+
+// Shared by every owner-side status change that doesn't release capacity
+// (only Cancel does — see cancelOrderByShop). Reuses the NotFound code for an
+// invalid transition, same as the customer-facing cancelOrder, since the mock
+// has no dedicated "invalid transition" error and the UI never needs to tell
+// the two apart.
+function applyOwnerTransition(token: string, allowedFrom: OrderStatus[], to: OrderStatus): StoredOrder {
+  const orders = getOrders();
+  const index = orders.findIndex((o) => o.token === token);
+  if (index === -1) throw new OrderingError('NotFound', 'Order not found.');
+
+  const order = orders[index];
+  if (!allowedFrom.includes(order.status)) {
+    throw new OrderingError('NotFound', `Order is ${order.status}, not eligible for this action.`);
+  }
+
+  const updated: StoredOrder = { ...order, status: to };
+  orders[index] = updated;
+  saveOrders(orders);
+  return updated;
+}
+
 export interface OrderingClient {
   getAvailability(): Promise<AvailabilityDto>;
   createOrder(request: CreateOrderRequest): Promise<OrderDto>;
@@ -143,6 +194,19 @@ export interface OrderingClient {
   // to staff, not for authenticating a status/cancel lookup.
   getOrder(token: string): Promise<OrderDto | null>;
   cancelOrder(token: string): Promise<OrderDto>;
+
+  // Owner-side (admin board). No auth boundary exists in the mock — that's an
+  // SWA built-in auth + route-rule concern for the real backend, not this seam.
+  listBoardOrders(): Promise<OrderDto[]>;
+  startOrder(token: string): Promise<OrderDto>;
+  markReady(token: string): Promise<OrderDto>;
+  markPickedUp(token: string): Promise<OrderDto>;
+  markNoShow(token: string): Promise<OrderDto>;
+  cancelOrderByShop(token: string): Promise<OrderDto>;
+  getAdminSettings(): Promise<AdminSettingsDto>;
+  setOnlineOrderingEnabled(enabled: boolean): Promise<void>;
+  getMenuAvailability(): Promise<MenuItemAvailabilityDto[]>;
+  setItemSoldOut(itemSlug: string, soldOut: boolean): Promise<void>;
 }
 
 export function createMockOrderingClient(): OrderingClient {
@@ -160,19 +224,22 @@ export function createMockOrderingClient(): OrderingClient {
 
       const now = new Date();
       const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const { onlineOrderingEnabled } = getAdminSettingsStored();
 
       const slotsToday = buildSlotDtos(now, now, isSlotFull);
       const slotsTomorrow = buildSlotDtos(now, tomorrow, isSlotFull);
 
-      const asapSlot = resolveAsapSlot(
-        now,
-        generateSlotsForDay(now).filter((s) => !isSlotFull(s)),
-      );
+      const asapSlot = onlineOrderingEnabled
+        ? resolveAsapSlot(
+            now,
+            generateSlotsForDay(now).filter((s) => !isSlotFull(s)),
+          )
+        : undefined;
 
       return {
         isShopOpen: isShopOpenAt(now),
-        isAcceptingOrders: isAcceptingOrdersAt(now),
-        isOrderingPaused: false,
+        isAcceptingOrders: isAcceptingOrdersAt(now) && onlineOrderingEnabled,
+        isOrderingPaused: !onlineOrderingEnabled,
         earliestAsapIso: asapSlot?.toISOString(),
         slotsToday,
         slotsTomorrow,
@@ -193,10 +260,12 @@ export function createMockOrderingClient(): OrderingClient {
       }
 
       // Re-check orderability at submit time, not just at add-to-cart time — an
-      // item can go sold out while the customer is still filling out the form.
+      // item can go sold out (statically, or via the admin board's runtime
+      // toggle) while the customer is still filling out the form.
+      const { soldOutSlugs } = getAdminSettingsStored();
       const unavailableLine = request.lines.find((line) => {
         const catalogItem = catalogItems.find((c) => c.slug === line.itemSlug);
-        return !catalogItem || !catalogItem.isActive || !catalogItem.isOrderable;
+        return !catalogItem || !catalogItem.isActive || !catalogItem.isOrderable || soldOutSlugs.includes(line.itemSlug);
       });
       if (unavailableLine) {
         throw new OrderingError('ItemUnavailable', `${unavailableLine.name} just sold out — go back and swap it out.`);
@@ -204,6 +273,10 @@ export function createMockOrderingClient(): OrderingClient {
 
       const byIdempotency = getOrders().find((o) => o.idempotencyKey === request.idempotencyKey);
       if (byIdempotency) return toPublicOrder(byIdempotency);
+
+      if (!getAdminSettingsStored().onlineOrderingEnabled) {
+        throw new OrderingError('OrderingPaused', "We've paused online orders for the moment — please call the shop.");
+      }
 
       const now = new Date();
       // "Closed right now" only blocks ASAP orders — a scheduled order for a future
@@ -289,16 +362,90 @@ export function createMockOrderingClient(): OrderingClient {
         throw new OrderingError('NotFound', 'This order can no longer be canceled online — call the shop.');
       }
 
-      const prepUnits = order.items.reduce(
-        (sum, item) => sum + item.quantity * (catalogItems.find((c) => c.slug === item.itemSlug)?.prepUnits ?? 1),
-        0,
-      );
-      releaseSlot(new Date(order.pickupAtIso), prepUnits);
+      releaseOrderSlot(order);
 
       const updated: StoredOrder = { ...order, status: 'Canceled' as OrderStatus, cancelReason: 'Customer' };
       orders[index] = updated;
       saveOrders(orders);
       return toPublicOrder(updated);
+    },
+
+    async listBoardOrders(): Promise<OrderDto[]> {
+      await wait(SIMULATED_LATENCY_MS);
+      return getOrders()
+        .filter((o) => o.status === 'Confirmed' || o.status === 'InProgress' || o.status === 'Ready')
+        .sort((a, b) => new Date(a.pickupAtIso).getTime() - new Date(b.pickupAtIso).getTime())
+        .map(toPublicOrder);
+    },
+
+    async startOrder(token: string): Promise<OrderDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      return toPublicOrder(applyOwnerTransition(token, ['Confirmed'], 'InProgress'));
+    },
+
+    async markReady(token: string): Promise<OrderDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      return toPublicOrder(applyOwnerTransition(token, ['InProgress'], 'Ready'));
+    },
+
+    async markPickedUp(token: string): Promise<OrderDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      return toPublicOrder(applyOwnerTransition(token, ['Ready'], 'PickedUp'));
+    },
+
+    async markNoShow(token: string): Promise<OrderDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      return toPublicOrder(applyOwnerTransition(token, ['Confirmed', 'InProgress', 'Ready'], 'NoShow'));
+    },
+
+    async cancelOrderByShop(token: string): Promise<OrderDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      const orders = getOrders();
+      const index = orders.findIndex((o) => o.token === token);
+      if (index === -1) throw new OrderingError('NotFound', 'Order not found.');
+
+      const order = orders[index];
+      if (order.status !== 'Confirmed' && order.status !== 'InProgress' && order.status !== 'Ready') {
+        throw new OrderingError('NotFound', `Order is ${order.status}, not eligible for this action.`);
+      }
+
+      releaseOrderSlot(order);
+      const updated: StoredOrder = { ...order, status: 'Canceled' as OrderStatus, cancelReason: 'Shop' as CancelReason };
+      orders[index] = updated;
+      saveOrders(orders);
+      return toPublicOrder(updated);
+    },
+
+    async getAdminSettings(): Promise<AdminSettingsDto> {
+      await wait(SIMULATED_LATENCY_MS);
+      return { onlineOrderingEnabled: getAdminSettingsStored().onlineOrderingEnabled };
+    },
+
+    async setOnlineOrderingEnabled(enabled: boolean): Promise<void> {
+      await wait(SIMULATED_LATENCY_MS);
+      saveAdminSettingsStored({ ...getAdminSettingsStored(), onlineOrderingEnabled: enabled });
+    },
+
+    async getMenuAvailability(): Promise<MenuItemAvailabilityDto[]> {
+      await wait(SIMULATED_LATENCY_MS);
+      const { soldOutSlugs } = getAdminSettingsStored();
+      return catalogItems
+        .filter((item) => item.isActive)
+        .map((item) => ({
+          slug: item.slug,
+          name: item.name,
+          categorySlug: item.categorySlug,
+          isSoldOut: soldOutSlugs.includes(item.slug),
+        }));
+    },
+
+    async setItemSoldOut(itemSlug: string, soldOut: boolean): Promise<void> {
+      await wait(SIMULATED_LATENCY_MS);
+      const settings = getAdminSettingsStored();
+      const soldOutSlugs = soldOut
+        ? Array.from(new Set([...settings.soldOutSlugs, itemSlug]))
+        : settings.soldOutSlugs.filter((slug) => slug !== itemSlug);
+      saveAdminSettingsStored({ ...settings, soldOutSlugs });
     },
   };
 }

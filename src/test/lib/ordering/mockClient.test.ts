@@ -311,3 +311,135 @@ describe('cancelOrder', () => {
     await expectRejects(client.cancelOrder('not-a-real-token'), { code: 'NotFound' });
   });
 });
+
+describe('admin — kill switch and sold-out overrides', () => {
+  it('pauses availability and blocks new orders once online ordering is disabled', async () => {
+    const client = createMockOrderingClient();
+    await run(client.setOnlineOrderingEnabled(false));
+
+    const availability = await run(client.getAvailability());
+    expect(availability.isOrderingPaused).toBe(true);
+    expect(availability.isAcceptingOrders).toBe(false);
+    expect(availability.earliestAsapIso).toBeUndefined();
+
+    await expectRejects(client.createOrder(buildRequest()), { code: 'OrderingPaused' });
+  });
+
+  it('resumes accepting orders once re-enabled', async () => {
+    const client = createMockOrderingClient();
+    await run(client.setOnlineOrderingEnabled(false));
+    await run(client.setOnlineOrderingEnabled(true));
+
+    const order = await run(client.createOrder(buildRequest()));
+    expect(order.status).toBe('Confirmed');
+  });
+
+  it('blocks ordering a sold-out item and reflects it in menu availability', async () => {
+    const client = createMockOrderingClient();
+    await run(client.setItemSoldOut('espresso', true));
+
+    const menu = await run(client.getMenuAvailability());
+    expect(menu.find((m) => m.slug === 'espresso')?.isSoldOut).toBe(true);
+    expect(menu.find((m) => m.slug === 'cortado')?.isSoldOut).toBe(false);
+
+    await expectRejects(client.createOrder(buildRequest()), { code: 'ItemUnavailable' });
+  });
+
+  it('allows ordering again once an item is marked available', async () => {
+    const client = createMockOrderingClient();
+    await run(client.setItemSoldOut('espresso', true));
+    await run(client.setItemSoldOut('espresso', false));
+
+    const order = await run(client.createOrder(buildRequest()));
+    expect(order.status).toBe('Confirmed');
+  });
+});
+
+describe('admin — board queries and transitions', () => {
+  it('lists only Confirmed, InProgress, and Ready orders, sorted by pickup time', async () => {
+    const client = createMockOrderingClient();
+    const later = await run(
+      client.createOrder(buildRequest({ idempotencyKey: 'later', pickupMode: 'scheduled', pickupSlotIso: MONDAY(14, 0).toISOString() })),
+    );
+    const earlier = await run(client.createOrder(buildRequest({ idempotencyKey: 'earlier', phoneRaw: '9515559999' })));
+    const pickedUp = await run(client.createOrder(buildRequest({ idempotencyKey: 'done', phoneRaw: '9515558888' })));
+    await run(client.startOrder(pickedUp.token));
+    await run(client.markReady(pickedUp.token));
+    await run(client.markPickedUp(pickedUp.token));
+
+    const board = await run(client.listBoardOrders());
+
+    expect(board.map((o) => o.token)).toEqual([earlier.token, later.token]);
+  });
+
+  it('walks a Confirmed order through InProgress, Ready, and PickedUp', async () => {
+    const client = createMockOrderingClient();
+    const created = await run(client.createOrder(buildRequest()));
+
+    const started = await run(client.startOrder(created.token));
+    expect(started.status).toBe('InProgress');
+
+    const ready = await run(client.markReady(created.token));
+    expect(ready.status).toBe('Ready');
+
+    const pickedUp = await run(client.markPickedUp(created.token));
+    expect(pickedUp.status).toBe('PickedUp');
+  });
+
+  it('rejects an out-of-order transition', async () => {
+    const client = createMockOrderingClient();
+    const created = await run(client.createOrder(buildRequest()));
+
+    await expectRejects(client.markReady(created.token), { code: 'NotFound' });
+    await expectRejects(client.markPickedUp(created.token), { code: 'NotFound' });
+  });
+
+  it('marks a Confirmed, InProgress, or Ready order as a no-show', async () => {
+    const client = createMockOrderingClient();
+    const confirmed = await run(client.createOrder(buildRequest({ idempotencyKey: 'a', phoneRaw: '9515551111' })));
+    const inProgress = await run(client.createOrder(buildRequest({ idempotencyKey: 'b', phoneRaw: '9515552222' })));
+    await run(client.startOrder(inProgress.token));
+
+    expect((await run(client.markNoShow(confirmed.token))).status).toBe('NoShow');
+    expect((await run(client.markNoShow(inProgress.token))).status).toBe('NoShow');
+  });
+
+  it('cancels a shop-initiated order, tags the reason, and releases its slot', async () => {
+    const client = createMockOrderingClient();
+    const targetSlotIso = MONDAY(11, 0).toISOString();
+    window.localStorage.setItem(
+      'ob-slot-reservations-v1',
+      JSON.stringify({ [targetSlotIso]: { reservedOrders: 9, reservedPrepUnits: 0 } }),
+    );
+    const scheduled = { pickupMode: 'scheduled' as const, pickupSlotIso: targetSlotIso };
+    const created = await run(client.createOrder(buildRequest(scheduled))); // 10th order, fills the slot
+
+    const canceled = await run(client.cancelOrderByShop(created.token));
+    expect(canceled.status).toBe('Canceled');
+    expect(canceled.cancelReason).toBe('Shop');
+
+    const retried = await run(
+      client.createOrder(buildRequest({ ...scheduled, idempotencyKey: 'retry', phoneRaw: '9515559999' })),
+    );
+    expect(retried.status).toBe('Confirmed');
+  });
+
+  it('rejects canceling or no-showing an order that already reached a terminal state', async () => {
+    const client = createMockOrderingClient();
+    const created = await run(client.createOrder(buildRequest()));
+    await run(client.cancelOrderByShop(created.token));
+
+    await expectRejects(client.cancelOrderByShop(created.token), { code: 'NotFound' });
+    await expectRejects(client.markNoShow(created.token), { code: 'NotFound' });
+  });
+
+  it('rejects an unknown token for every owner action', async () => {
+    const client = createMockOrderingClient();
+
+    await expectRejects(client.startOrder('nope'), { code: 'NotFound' });
+    await expectRejects(client.markReady('nope'), { code: 'NotFound' });
+    await expectRejects(client.markPickedUp('nope'), { code: 'NotFound' });
+    await expectRejects(client.markNoShow('nope'), { code: 'NotFound' });
+    await expectRejects(client.cancelOrderByShop('nope'), { code: 'NotFound' });
+  });
+});

@@ -81,6 +81,17 @@ export class OrderingError extends Error {
   }
 }
 
+export type AdminSettingsDto = {
+  onlineOrderingEnabled: boolean;
+};
+
+export type MenuItemAvailabilityDto = {
+  slug: string;
+  name: string;
+  categorySlug: string;
+  isSoldOut: boolean;
+};
+
 export type CreateOrderRequest = {
   idempotencyKey: string;
   lines: CartLine[];

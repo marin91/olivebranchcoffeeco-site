@@ -26,5 +26,8 @@ export const orderingConfig = {
   maxPrepUnitsPerSlot: 999,
   maxOpenOrdersPerPhone: 2,
   horizonDays: 2,
+  // Minutes past an order's pickup slot before the board offers a No-show
+  // action. Derived lazily on the board — no timer job (see decisions.md).
+  graceMinutes: 15,
   weeklyHours,
 };

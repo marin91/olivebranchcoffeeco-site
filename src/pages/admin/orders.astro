@@ -1,0 +1,26 @@
+---
+import AdminBoard from '../../components/order/AdminBoard.tsx';
+import '../../styles/global.css';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/jpeg" href="/images/logo.jpg" />
+    <title>Pickup Orders · Admin · Olive Branch Coffee Co.</title>
+  </head>
+  <body>
+    <!--
+      Standalone shell, not BaseLayout: this is a tablet board behind the
+      counter, not a marketing page, so no customer Header/Footer chrome.
+
+      No auth yet — see decisions.md. The real backend wires SWA built-in
+      auth + an `owner` route rule over this path; until then this page is
+      built against the mock client, same as the rest of the ordering track.
+    -->
+    <AdminBoard client:load />
+  </body>
+</html>
