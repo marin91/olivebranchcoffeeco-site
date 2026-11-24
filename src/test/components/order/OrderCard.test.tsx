@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import OrderCard from '../../../components/order/OrderCard';
 import { CONFIRMED_ORDER } from '../../fixtures/orders';
@@ -97,5 +97,51 @@ describe('OrderCard', () => {
 
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  });
+});
+
+describe('OrderCard — details popup', () => {
+  it('opens on clicking the summary and shows the full customer name, phone, email, and order total', async () => {
+    const user = userEvent.setup();
+    const order = { ...CONFIRMED_ORDER, email: 'miguel@example.com' };
+    render(<OrderCard order={order} isOverdue={false} isBusy={false} {...NOOP_HANDLERS} />);
+
+    await user.click(screen.getByText(order.reference));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(order.customerName)).toBeInTheDocument();
+    expect(within(dialog).getByText(order.phoneDisplay)).toBeInTheDocument();
+    expect(within(dialog).getByText(order.email)).toBeInTheDocument();
+    expect(within(dialog).getByText('Total')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('$3.25')).toHaveLength(2); // line total + order total
+  });
+
+  it('omits the email line when the order has none', async () => {
+    const user = userEvent.setup();
+    render(<OrderCard order={CONFIRMED_ORDER} isOverdue={false} isBusy={false} {...NOOP_HANDLERS} />);
+
+    await user.click(screen.getByText(CONFIRMED_ORDER.reference));
+
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument();
+  });
+
+  it('closes via the close button', async () => {
+    const user = userEvent.setup();
+    render(<OrderCard order={CONFIRMED_ORDER} isOverdue={false} isBusy={false} {...NOOP_HANDLERS} />);
+
+    await user.click(screen.getByText(CONFIRMED_ORDER.reference));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not open when clicking an action button', async () => {
+    const user = userEvent.setup();
+    render(<OrderCard order={CONFIRMED_ORDER} isOverdue={false} isBusy={false} {...NOOP_HANDLERS} />);
+
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
